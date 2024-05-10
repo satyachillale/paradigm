@@ -47,8 +47,6 @@ from models import (ddpm_sampler,
 from models.ema import EMAHelper
 from models.fvd.fvd import get_fvd_feats, frechet_distance, load_i3d_pretrained
 from models.unet import UNet_SMLD, UNet_DDPM
-# import torchmetrics
-# import wandb
 #import pdb; pdb.set_trace()
 
 __all__ = ['NCSNRunner']
@@ -110,7 +108,7 @@ def conditioning_fn(config, X, num_frames_pred=0, prob_mask_cond=0.0, prob_mask_
 
     cond = config.data.num_frames_cond
     train = config.data.num_frames
-    pred = num_frames_pred # same as config.data.num_frames
+    pred = num_frames_pred
     future = getattr(config.data, "num_frames_future", 0)
 
     # Frames to train on / sample
@@ -126,7 +124,7 @@ def conditioning_fn(config, X, num_frames_pred=0, prob_mask_cond=0.0, prob_mask_
     else:
         cond_mask = None
 
-    # Future. AD - zero for our case
+    # Future
     if future > 0:
 
         if prob_mask_future == 1.0:
@@ -205,7 +203,6 @@ class NCSNRunner():
         args.log_sample_path = os.path.join(args.log_path, 'samples')
         os.makedirs(args.log_sample_path, exist_ok=True)
         self.get_mode()
-        # self.wandb_run = wandb.init(project= "DL-next-fram-11v11", config = self.config )
 
     def get_mode(self):
         self.condf, self.condp = self.config.data.num_frames_cond, getattr(self.config.data, "prob_mask_cond", 0.0)
@@ -352,7 +349,6 @@ class NCSNRunner():
 
         # Initial samples
         n_init_samples = min(36, self.config.training.batch_size)
-        #print("n_init_samp")
         init_samples_shape = (n_init_samples, self.config.data.channels*self.config.data.num_frames, self.config.data.image_size, self.config.data.image_size)
         if self.version == "SMLD":
             init_samples = torch.rand(init_samples_shape, device=self.config.device)
@@ -371,7 +367,6 @@ class NCSNRunner():
         self.total_train_time = 0
         self.start_time = time.time()
 
-        #print("just before train")
         early_end = False
         for epoch in range(start_epoch, self.config.training.n_epochs):
             for batch, (X, y) in enumerate(dataloader):
@@ -384,14 +379,11 @@ class NCSNRunner():
                 # Data
                 X = X.to(self.config.device)
                 X = data_transform(self.config, X)
-                #print("Getting data")
                 X, cond, cond_mask = conditioning_fn(self.config, X, num_frames_pred=self.config.data.num_frames,
                                                      prob_mask_cond=getattr(self.config.data, 'prob_mask_cond', 0.0),
                                                      prob_mask_future=getattr(self.config.data, 'prob_mask_future', 0.0),
                                                      conditional=conditional)
 
-                #print("post condtn - func")
-           
                 # Loss
                 itr_start = time.time()
                 loss = anneal_dsm_score_estimation(scorenet, X, labels=None, cond=cond, cond_mask=cond_mask,
@@ -401,13 +393,12 @@ class NCSNRunner():
                                                    all_frames=getattr(self.config.model, 'output_all_frames', False))
                 # tb_logger.add_scalar('loss', loss, global_step=step)
                 # tb_hook()
-                #print("post-loss-cal")
+
                 # Optimize
                 loss.backward()
-                #print("post-loss-back")
                 grad_norm = torch.nn.utils.clip_grad_norm_(scorenet.parameters(), getattr(self.config.optim, 'grad_clip', np.inf))
                 optimizer.step()
-                #print("optimise step done")
+
                 # Training time
                 itr_time = time.time() - itr_start
                 self.total_train_time += itr_time
@@ -422,7 +413,6 @@ class NCSNRunner():
                     logging.info("elapsed: {}, train time: {:.04f}, mem: {:.03f}GB, GPUmem: {:.03f}GB, step: {}, lr: {:.06f}, grad: {:.04f}, loss: {:.04f}".format(
                         str(datetime.timedelta(seconds=(time.time() - self.start_time)) + datetime.timedelta(seconds=self.time_elapsed_prev*3600))[:-3],
                         self.time_train.val, get_proc_mem(), get_GPU_mem(), step, lr, grad_norm, loss.item()))
-                    # wandb.log({"steps": step, "grad": grad_norm, "train_loss": loss.item(), "lr": lr })
 
                 if self.config.model.ema:
                     ema_helper.update(scorenet)
@@ -487,7 +477,7 @@ class NCSNRunner():
                     logging.info("elapsed: {}, step: {}, mem: {:.03f}GB, GPUmem: {:.03f}GB, test_loss: {:.04f}".format(
                         str(datetime.timedelta(seconds=(time.time() - self.start_time)) + datetime.timedelta(seconds=self.time_elapsed_prev*3600))[:-3],
                         step, get_proc_mem(), get_GPU_mem(), test_dsm_loss.item()))
-                    # wandb.log({"steps": step, "test_loss": test_dsm_loss.item() })
+
                     # Plot graphs
                     try:
                         plot_graphs_process.join()
@@ -504,7 +494,6 @@ class NCSNRunner():
                     # Calc video metrics with max_data_iter=1
                     if conditional and step % self.config.training.snapshot_freq == 0 and self.config.training.snapshot_sampling: # only at snapshot_freq, not at sample_freq
 
-                        # AD - no point in calucluating this metrics for us, only MSE is relevant - do it seprately 
                         vid_metrics = self.video_gen(scorenet=test_scorenet, ckpt=step, train=True)
 
                         if 'mse' in vid_metrics.keys():
@@ -624,7 +613,7 @@ class NCSNRunner():
                                           clip_before=getattr(self.config.sampling, 'clip_before', True),
                                           verbose=False, log=False, gamma=getattr(self.config.model, 'gamma', False)).to('cpu')
                     pred = all_samples[-1].reshape(all_samples[-1].shape[0], self.config.data.channels*self.config.data.num_frames,
-                                                   self.config.data.image_size, self.config.data.image_size) # Resize to 
+                                                   self.config.data.image_size, self.config.data.image_size)
                     pred = inverse_data_transform(self.config, pred)
 
                     if conditional:
@@ -677,13 +666,13 @@ class NCSNRunner():
                         del gif_frames
 
                         # Stretch out multiple frames horizontally
-                        pred = stretch_image(pred, self.config.data.channels, self.config.data.image_size) # frame, channel, image_size
+                        pred = stretch_image(pred, self.config.data.channels, self.config.data.image_size)
                         reali = stretch_image(reali, self.config.data.channels, self.config.data.image_size)
                         condi = stretch_image(condi, self.config.data.channels, self.config.data.image_size)
                         if future > 0:
                             futri = stretch_image(futri, self.config.data.channels, self.config.data.image_size)
 
-                        padding = 0.5 * torch.ones(len(reali), self.config.data.channels, self.config.data.image_size, 4) # AD - why this padding? - maybe to give a space in the grid, 
+                        padding = 0.5 * torch.ones(len(reali), self.config.data.channels, self.config.data.image_size, 4)
                         if self.config.data.channels == 1:
                             data = torch.cat([condi, padding, reali, padding, pred], dim=-1)
                             if future > 0:
@@ -705,7 +694,6 @@ class NCSNRunner():
                         image_grid = make_grid(pred, nrow)
 
                     save_image(image_grid, os.path.join(self.args.log_sample_path, 'image_grid_{}.png'.format(step)))
-                    #wandb.log({"samples":wandb.Image(os.path.join(self.args.log_sample_path, 'image_grid_{}.png'.format(step)))})
                     torch.save(pred, os.path.join(self.args.log_sample_path, 'samples_{}.pt'.format(step)))
 
                     del all_samples
@@ -1431,7 +1419,7 @@ class NCSNRunner():
                                      num_workers=self.config.data.num_workers, drop_last=False)
             data_iter2 = iter(dataloader2)
 
-        vid_mse, vid_ssim, vid_lpips, vid_jacc = [], [], [], [] # add jacrad score
+        vid_mse, vid_ssim, vid_lpips = [], [], []
         vid_mse2, vid_ssim2, vid_lpips2 = [], [], []
         real_embeddings, real_embeddings2, real_embeddings_uncond = [], [], []
         fake_embeddings, fake_embeddings2, fake_embeddings_uncond = [], [], []
@@ -1441,7 +1429,7 @@ class NCSNRunner():
                      Transforms.Normalize(mean=(0.5, 0.5, 0.5),
                                          std=(0.5, 0.5, 0.5))])
         model_lpips = eval_models.PerceptualLoss(model='net-lin',net='alex', device=self.config.device) # already in test mode and dataparallel
-        model_lpips = torch.nn.DataParallel(model_lpips) # AD - I dont need this
+        #model_lpips = torch.nn.DataParallel(model_lpips)
         #model_lpips.eval()
         # Sampler
         sampler = self.get_sampler()
@@ -1513,11 +1501,11 @@ class NCSNRunner():
             if getattr(self.config.sampling, 'one_frame_at_a_time', False):
                 n_iter_frames = num_frames_pred
             else:
-                n_iter_frames = ceil(num_frames_pred / self.config.data.num_frames) # if autoregressively predict all the frames, helpful during inference
+                n_iter_frames = ceil(num_frames_pred / self.config.data.num_frames)
 
             pred_samples = []
 
-            for i_frame in tqdm(range(n_iter_frames), desc="Generating video frames"): #
+            for i_frame in tqdm(range(n_iter_frames), desc="Generating video frames"):
 
                 mynet = scorenet
 
@@ -1550,7 +1538,7 @@ class NCSNRunner():
                                       gen_samples[:, self.config.data.channels*max(0, self.config.data.num_frames - self.config.data.num_frames_cond):]
                                      ], dim=1)
 
-                # resample new random init -> converted to pred
+                # resample new random init
                 if self.version == "SMLD":
                     z = torch.rand(init_samples_shape, device=self.config.device)
                     z = data_transform(self.config, z)
@@ -1588,32 +1576,17 @@ class NCSNRunner():
                     vid_mse.append(0)
                     vid_ssim.append(0)
                     vid_lpips.append(0)
-                    vid_jacc.append(0)
             else:
                 # Calculate MSE, PSNR, SSIM
-                #jaccard = torchmetrics.JaccardIndex(task="multiclass", num_classes=49, ignore_index= 0)
-                #def calculate_jacc(pred, real):
-                    
-                    #return jaccard(pred, real)
-                    
-
                 for ii in range(len(pred)):
-                    mse, avg_ssim, avg_distance, avg_jacc = 0, 0, 0, 0
+                    mse, avg_ssim, avg_distance = 0, 0, 0
                     for jj in range(num_frames_pred):
 
                         # MSE (and PSNR)
                         pred_ij = pred[ii, (self.config.data.channels*jj):(self.config.data.channels*jj + self.config.data.channels), :, :]
                         real_ij = real[ii, (self.config.data.channels*jj):(self.config.data.channels*jj + self.config.data.channels), :, :]
-                        mse += F.mse_loss(real_ij, pred_ij) 
-                        #if(ii==0 and jj == 0):
-                            #print("pred frame val: ",torch.min(pred_ij), torch.max(pred_ij))
-                            #print("real frame val: ",torch.min(real_ij), torch.max(real_ij))
+                        mse += F.mse_loss(real_ij, pred_ij)
 
-                        # AD - add jacarad
-
-                        #avg_jacc += calculate_jacc(pred_ij, real_ij)
-
-                        avg_jacc = 0.0
                         pred_ij_pil = Transforms.ToPILImage()(pred_ij).convert("RGB")
                         real_ij_pil = Transforms.ToPILImage()(real_ij).convert("RGB")
 
@@ -1634,15 +1607,13 @@ class NCSNRunner():
                     vid_mse.append(mse / num_frames_pred)
                     vid_ssim.append(avg_ssim / num_frames_pred)
                     vid_lpips.append(avg_distance.data.item() / num_frames_pred)
-                    vid_jacc.append(avg_jacc / num_frames_pred)
 
 
             # (2) Conditional Video Predition, if (1) was Interpolation : Calc MSE,etc. and FVD on fully cond model i.e. prob_mask_cond=0.0
             # unless prob_mask_sync is True, in which case perform (3) uncond gen
 
             second_calc = False
-            # Ad - not our usecase
-            if future > 0 and prob_mask_future > 0.0 and not self.prob_mask_sync and False: # AD - not required
+            if future > 0 and prob_mask_future > 0.0 and not self.prob_mask_sync:
 
                 second_calc = True
                 logging.info(f"(2) Video Pred")
@@ -2223,27 +2194,22 @@ class NCSNRunner():
 
         # Calc MSE, PSNR, SSIM, LPIPS
         mse_list = np.array(vid_mse).reshape(-1, preds_per_test).min(-1)
-        jacc_list = np.array(vid_jacc).reshape(-1, preds_per_test).min(-1)
-        #print("mse and jacc shap:", mse_list.shape, jacc_list.shape)
         psnr_list = (10 * np.log10(1 / np.array(vid_mse))).reshape(-1, preds_per_test).max(-1)
         ssim_list = np.array(vid_ssim).reshape(-1, preds_per_test).max(-1)
         lpips_list = np.array(vid_lpips).reshape(-1, preds_per_test).min(-1)
 
         def image_metric_stuff(metric):
             avg_metric, std_metric = metric.mean().item(), metric.std().item()
-            # conf95_metric = avg_metric - float(st.norm.interval(alpha=0.95, loc=avg_metric, scale=st.sem(metric))[0])
-            conf95_metric = 0
+            conf95_metric = avg_metric - float(st.norm.interval(alpha=0.95, loc=avg_metric, scale=st.sem(metric))[0])
             return avg_metric, std_metric, conf95_metric
 
         avg_mse, std_mse, conf95_mse = image_metric_stuff(mse_list)
-        avg_jacc, std_jacc, conf95_jacc = image_metric_stuff(jacc_list)
         avg_psnr, std_psnr, conf95_psnr = image_metric_stuff(psnr_list)
         avg_ssim, std_ssim, conf95_ssim = image_metric_stuff(ssim_list)
         avg_lpips, std_lpips, conf95_lpips = image_metric_stuff(lpips_list)
 
         vid_metrics = {'ckpt': ckpt, 'preds_per_test': preds_per_test,
                         'mse': avg_mse, 'mse_std': std_mse, 'mse_conf95': conf95_mse,
-                        'jacc': avg_jacc, 'jacc_std': std_jacc, 'jacc_conf95': conf95_jacc,
                         'psnr': avg_psnr, 'psnr_std': std_psnr, 'psnr_conf95': conf95_psnr,
                         'ssim': avg_ssim, 'ssim_std': std_ssim, 'ssim_conf95': conf95_ssim,
                         'lpips': avg_lpips, 'lpips_std': std_lpips, 'lpips_conf95': conf95_lpips}
@@ -2317,8 +2283,6 @@ class NCSNRunner():
             elapsed = str(datetime.timedelta(seconds=(time.time() - self.start_time)))[:-3]
         format_p = lambda dd : ", ".join([f"{k}:{v:.4f}" if k != 'ckpt' and k != 'preds_per_test' and k != 'time' else f"{k}:{v:7d}" if k == 'ckpt' else f"{k}:{v:3d}" if k == 'preds_per_test' else f"{k}:{v}" for k, v in dd.items()])
         logging.info(f"elapsed: {elapsed}, {format_p(vid_metrics)}")
-        # wandb.log({'mse': avg_mse, 'mse_std': std_mse,
-                        # 'jacc': avg_jacc, 'jacc_std': std_jacc})
         logging.info(f"elapsed: {elapsed}, mem:{get_proc_mem():.03f}GB, GPUmem: {get_GPU_mem():.03f}GB")
 
         if train:
@@ -2752,8 +2716,7 @@ class NCSNRunner():
     def init_meters(self):
         success = self.load_meters()
         if not success:
-            #print("Inside not success")
-            self.epochs = RunningAverageMeter() 
+            self.epochs = RunningAverageMeter()
             self.losses_train, self.losses_test = RunningAverageMeter(), RunningAverageMeter()
             self.lr_meter, self.grad_norm = RunningAverageMeter(), RunningAverageMeter()
             self.time_train, self.time_elapsed = RunningAverageMeter(), RunningAverageMeter()

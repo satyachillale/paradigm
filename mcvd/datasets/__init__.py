@@ -6,7 +6,7 @@ from torchvision.datasets import CIFAR10, LSUN
 from torch.utils.data import DataLoader
 
 from datasets.celeba import CelebA
-# from datasets.ffhq import FFHQ
+from datasets.ffhq import FFHQ
 from datasets.imagenet import ImageNetDataset
 from datasets.moving_mnist import MovingMNIST
 from datasets.stochastic_moving_mnist import StochasticMovingMNIST
@@ -14,11 +14,11 @@ from datasets.bair import BAIRDataset
 from datasets.kth import KTHDataset
 from datasets.cityscapes import CityscapesDataset
 from datasets.ucf101 import UCF101Dataset
-from datasets.semantic_seg import SegmentationMaskDataset, NextFramePredDatasets, ElevenVsOneFramePredDatasets
+from mcvd.datasets.FutureFramePrediction import FutureFramePrediction
 from torch.utils.data import Subset
 
 
-DATASETS = ['CIFAR10', 'CELEBA', 'LSUN', 'FFHQ', 'IMAGENET', 'MOVINGMNIST', 'STOCHASTICMOVINGMNIST', 'BAIR', 'KTH', 'CITYSCAPES', 'UCF101', "SegmentationMaskDataset".upper(), "NextFramePredDatasets".upper(), "ElevenVsOneFramePredDatasets".upper()]
+DATASETS = ['CIFAR10', 'CELEBA', 'LSUN', 'FFHQ', 'IMAGENET', 'MOVINGMNIST', 'STOCHASTICMOVINGMNIST', 'BAIR', 'KTH', 'CITYSCAPES', 'UCF101', "FUTUREFRAMEPREDICTION"]
 
 
 def get_dataloaders(data_path, config):
@@ -50,52 +50,21 @@ def get_dataset(data_path, config, video_frames_pred=0, start_at=0):
             transforms.Resize(config.data.image_size),
             transforms.ToTensor()
         ])
+    
+    if config.data.dataset.upper() == 'FUTUREFRAMEPREDICTION':
+        transform = transforms.Compose([
+            transforms.Resize((config.data.image_size, config.data.image_size)),
+            transforms.ToTensor()
+        ])
 
-    if config.data.dataset.upper() == 'CIFAR10':
+        dataset = FutureFramePrediction(root_dir= data_path, split= 'unlabeled', tranforms= transform)
+        test_dataset = FutureFramePrediction(root_dir= data_path, split= 'val', tranforms= transform)
+
+    elif config.data.dataset.upper() == 'CIFAR10':
         dataset = CIFAR10(data_path, train=True, download=True,
                           transform=tran_transform)
         test_dataset = CIFAR10(data_path, train=False, download=True,
                                transform=test_transform)
-
-    elif config.data.dataset == 'SegmentationMaskDataset':
-        seq_len = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0) + video_frames_pred
-        dataset = SegmentationMaskDataset(root_dir= data_path, split= 'train', n_frames= seq_len )
-        test_dataset = SegmentationMaskDataset(root_dir= data_path, split= 'val', n_frames= seq_len )
-
-    elif config.data.dataset == 'NextFramePredDatasets':
-        mode = f"{config.data.num_frames_cond}v{config.data.num_frames}"
-
-        train_transform = transforms.Compose([
-            transforms.Resize((config.data.image_size, config.data.image_size)),
-            # transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ToTensor()
-        ])
-
-        test_transform = transforms.Compose([
-            transforms.Resize((config.data.image_size, config.data.image_size)),
-            transforms.ToTensor()
-        ])
-
-        dataset = NextFramePredDatasets(root_dir= data_path, split= 'unlabeled', mode= mode, tranforms= train_transform)
-        test_dataset = NextFramePredDatasets(root_dir= data_path, split= 'val', mode= mode, tranforms= test_transform)
-
-    elif config.data.dataset == 'ElevenVsOneFramePredDatasets':
-        mode = "last"
-
-        train_transform = transforms.Compose([
-            transforms.Resize((config.data.image_size, config.data.image_size)),
-            # transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ToTensor()
-        ])
-
-        test_transform = transforms.Compose([
-            transforms.Resize((config.data.image_size, config.data.image_size)),
-            transforms.ToTensor()
-        ])
-
-        dataset = ElevenVsOneFramePredDatasets(root_dir= data_path, split= 'unlabeled', mode= mode, tranforms= train_transform)
-        test_dataset = ElevenVsOneFramePredDatasets(root_dir= data_path, split= 'val', mode= mode, tranforms= test_transform)
-
 
     elif config.data.dataset.upper() == 'CELEBA':
         if config.data.random_flip:
