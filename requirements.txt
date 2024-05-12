@@ -16,3 +16,4 @@ torchvision
 ninja
 pillow
 torchmetrics
+lmdb

@@ -14,7 +14,7 @@ from datasets.bair import BAIRDataset
 from datasets.kth import KTHDataset
 from datasets.cityscapes import CityscapesDataset
 from datasets.ucf101 import UCF101Dataset
-from mcvd.datasets.FutureFramePrediction import FutureFramePrediction
+from datasets.FutureFramePrediction import FutureFramePrediction
 from torch.utils.data import Subset
 
 
@@ -57,8 +57,8 @@ def get_dataset(data_path, config, video_frames_pred=0, start_at=0):
             transforms.ToTensor()
         ])
 
-        dataset = FutureFramePrediction(root_dir= data_path, split= 'unlabeled', tranforms= transform)
-        test_dataset = FutureFramePrediction(root_dir= data_path, split= 'val', tranforms= transform)
+        dataset = FutureFramePrediction(rootDir= data_path, split= 'unlabeled', mode='last', transforms= transform)
+        test_dataset = FutureFramePrediction(rootDir= data_path, split= 'val', mode='last', transforms= transform)
 
     elif config.data.dataset.upper() == 'CIFAR10':
         dataset = CIFAR10(data_path, train=True, download=True,

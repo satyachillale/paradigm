@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
 import re, sys
-import tqdm
+from tqdm import tqdm
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -36,8 +36,8 @@ def predict(ckpt, data_path):
     m = torch.load(ckpt)
     model.load_state_dict(m)
     model.eval()
-    preds = PredictionData(dir=data_path)
-    predLoader = DataLoader(preds, batch_size=10, shuffle=False)
+    predictionDataset = PredictionData(dir=data_path)
+    predLoader = DataLoader(predictionDataset, batch_size=10, shuffle=False)
     results = {}
     for i, (image, video_number) in enumerate(tqdm(predLoader, desc="Generating Masks for predictions")):
         image = image.to(device)

@@ -5,14 +5,13 @@ from PIL import Image
 import re
 
 class FutureFramePrediction(Dataset):
-    def __init__(self, rootDir, split='train', transforms=None):
+    def __init__(self, rootDir, mode, split='train', transforms=None):
         self.videoFolders = []
-        self.mode = 'last'
+        self.mode = mode
         self.dataDir = os.path.join(rootDir, split)
         self.split = split
         self.framesPerVideo = 11
         self.transforms = transforms
-        
         for folder in os.listdir(self.dataDir):
             if os.path.isdir(os.path.join(self.dataDir, folder)):
                 self.videoFolders.append(os.path.join(self.dataDir, folder))
@@ -22,20 +21,16 @@ class FutureFramePrediction(Dataset):
             return len(self.videoFolders)
         return len(self.videoFolders) * self.framesPerVideo
     
-    def __getitem__(self, idx):
-        videoIndex = idx // self.framesPerVideo
-        startFrameIdx = idx % self.framesPerVideo
-        
-        if self.mode == 'last':
-            videoIndex = idx
-            startFrameIdx = 0
+    def __getitem__(self, idx):        
+        videoIndex = idx
+        startFrameIdx = 0
         
         requestedFrameIdxs = [startFrameIdx + i for i in range(self.framesPerVideo)]
         
         if self.mode == 'last':
             requestedFrameIdxs = [startFrameIdx + i for i in range(self.framesPerVideo * 2)]
         else:
-            requestedFrameIdxs.append(startFrameIdx + self.framesPerVideo)
+            requestedFrameIdxs.append(0)
         
         frames = []
         pattern = re.compile(r'video_(\d+)$')
